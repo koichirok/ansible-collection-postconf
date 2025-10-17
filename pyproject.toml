@@ -1,0 +1,21 @@
+[project]
+name = "koichirok.postconf"
+requires-python = ">=3.6"
+dependencies = [
+    "ansible-core>=2.16.14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pytest",
+]
+
+[tool.black]
+line-length = 140
+
+[tool.pyright]
+pythonVersion = "3.6"
+
+[tool.pytest.ini_options]
+pythonpath = "."

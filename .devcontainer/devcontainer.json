@@ -1,0 +1,38 @@
+{
+	"name": "koichirok.postconf: ansible module for postconf",
+	"image": "mcr.microsoft.com/devcontainers/base:noble",
+	"features": {
+		"ghcr.io/devcontainers-extra/features/ansible:2": {
+			"injections": "molecule molecule-plugins[docker] pytest"
+		},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/hspaans/devcontainer-features/ansible-lint": {},
+		"ghcr.io/devcontainers-extra/features/black": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"redhat.ansible",
+				"ms-python.black-formatter",
+				"ms-python.isort"
+			],
+			"settings": {
+				"files.associations": {
+					"**/defaults/*.yml": "ansible",
+					"**/handlers/*.yml": "ansible",
+					"**/meta/*.yml": "ansible",
+					"**/molecule/**/*.yml": "ansible",
+					"**/tasks/*.yml": "ansible",
+					"**/vars/*.yml": "ansible"
+				},
+				"python.venvPath": "/usr/local/py-utils/venvs",
+				"python.defaultInterpreterPath": "/usr/local/py-utils/venvs/ansible-core/bin/python3",
+				"[python]": {
+					"editor.defaultFormatter": "ms-python.black-formatter",
+					"editor.formatOnSave": true
+				},
+				"isort.args": ["--profile", "black"]
+			}
+		}
+	}
+}
