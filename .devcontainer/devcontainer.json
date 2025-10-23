@@ -3,12 +3,13 @@
 	"image": "mcr.microsoft.com/devcontainers/base:noble",
 	"features": {
 		"ghcr.io/devcontainers-extra/features/ansible:2": {
-			"injections": "molecule molecule-plugins[docker] pytest"
+			"injections": "molecule molecule-plugins[docker] pytest ansible-lint"
 		},
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
-		"ghcr.io/hspaans/devcontainer-features/ansible-lint": {},
 		"ghcr.io/devcontainers-extra/features/black": {}
 	},
+	"workspaceMount": "source=${localWorkspaceFolder},target=/ansible_collections/koichirok/postconf,type=bind",
+	"workspaceFolder": "/ansible_collections/koichirok/postconf",
 	"customizations": {
 		"vscode": {
 			"extensions": [
