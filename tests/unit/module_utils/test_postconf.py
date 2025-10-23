@@ -1,6 +1,6 @@
-# tests/test_postconf.py
+# tests/unit/module_utils/test_postconf.py
 
-from library.postconf import guess_separator, dict_config_str, str_config_dict
+from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import guess_separator, dict_config_str, str_config_dict
 
 
 def test_guess_separator():

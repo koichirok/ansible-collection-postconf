@@ -2,7 +2,7 @@
 
 import pytest
 from collections import OrderedDict
-from library.postconf import Postconf
+from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import Postconf
 
 
 def test_postconf_load_and_str(sample_config_str, sample_config_dict):
@@ -41,7 +41,7 @@ def test_postconf_config_directory_omitted_and_missing_in_config(sample_config_s
     # Remove config_directory from config to trigger error
     pc.config.pop("config_directory")
     with pytest.raises(RuntimeError):
-        _ = pc.config_directory
+        pc.config_directory
 
 
 def test_postconf_get_setitem_and_changed(sample_config_str):
@@ -132,3 +132,91 @@ def test_postconf_make_update_config_commands_argmax(sample_config_str):
     assert "-e" in cmds[0]
     assert any("myhostname=host1" in arg for arg in cmds[0])
     assert any("mydestination=a, b, c, d, e, f, g" in arg for arg in cmds[1])
+
+
+def test_postconf_iter(sample_config_str):
+    """Test __iter__ method returns keys iterator"""
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(sample_config_str)
+
+    # Test that we can iterate over the keys
+    keys_from_iter = list(pc)
+    expected_keys = ["mail_version", "config_directory", "myhostname", "mydestination", "relayhost"]
+    assert keys_from_iter == expected_keys
+
+    # Test that iteration works in for loop
+    keys_from_loop = []
+    for key in pc:
+        keys_from_loop.append(key)
+    assert keys_from_loop == expected_keys
+
+
+def test_postconf_keys(sample_config_str):
+    """Test keys() method returns all configuration keys"""
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(sample_config_str)
+
+    keys = list(pc.keys())
+    expected_keys = ["mail_version", "config_directory", "myhostname", "mydestination", "relayhost"]
+    assert keys == expected_keys
+
+    # Test that keys() returns generator
+    keys_gen = pc.keys()
+    assert hasattr(keys_gen, "__iter__")
+    assert list(keys_gen) == expected_keys
+
+
+def test_postconf_values(sample_config_str):
+    """Test values() method returns all configuration values"""
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(sample_config_str)
+
+    values = list(pc.values())
+    expected_values = ["3.8.6", "/etc/postfix", "mail.example.com", "$myhostname, localhost.$mydomain, localhost", ""]
+    assert values == expected_values
+
+    # Test that values() returns generator
+    values_gen = pc.values()
+    assert hasattr(values_gen, "__iter__")
+    assert list(values_gen) == expected_values
+
+
+def test_postconf_items(sample_config_str):
+    """Test items() method returns key-value pairs"""
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(sample_config_str)
+
+    items = list(pc.items())
+    expected_items = [
+        ("mail_version", "3.8.6"),
+        ("config_directory", "/etc/postfix"),
+        ("myhostname", "mail.example.com"),
+        ("mydestination", "$myhostname, localhost.$mydomain, localhost"),
+        ("relayhost", ""),
+    ]
+    assert items == expected_items
+
+    # Test that items() returns generator
+    items_gen = pc.items()
+    assert hasattr(items_gen, "__iter__")
+    assert list(items_gen) == expected_items
+
+
+def test_postconf_dict_conversion(sample_config_str):
+    """Test that dict(postconf) creates a dictionary from the configuration"""
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(sample_config_str)
+
+    config_dict = dict(pc)
+    expected_dict = {
+        "mail_version": "3.8.6",
+        "config_directory": "/etc/postfix",
+        "myhostname": "mail.example.com",
+        "mydestination": "$myhostname, localhost.$mydomain, localhost",
+        "relayhost": "",
+    }
+    assert config_dict == expected_dict
+
+    # Test that the returned dict is independent
+    config_dict["new_key"] = "new_value"
+    assert "new_key" not in pc.config

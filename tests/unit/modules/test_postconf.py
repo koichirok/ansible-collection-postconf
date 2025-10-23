@@ -1,7 +1,8 @@
 from unittest.mock import patch, DEFAULT, MagicMock, call
 import pytest
 
-from library.postconf import PostconfModule, Postconf
+from ansible_collections.koichirok.postconf.plugins.modules.postconf import PostconfModule
+from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import Postconf
 
 
 @pytest.fixture
@@ -28,7 +29,9 @@ def mock_PostconfModule(request, sample_config_str):
     if hasattr(request, "param") and isinstance(request.param, dict):
         mock_props.update(request.param)
 
-    with patch.multiple("library.postconf.PostconfModule", **{k: DEFAULT for k, v in mock_props.items()}) as mock:
+    with patch.multiple(
+        "ansible_collections.koichirok.postconf.plugins.modules.postconf.PostconfModule", **{k: DEFAULT for k, v in mock_props.items()}
+    ) as mock:
         for k, v in mock_props.items():
             if k not in mock or v is DEFAULT:
                 continue
@@ -48,8 +51,10 @@ def mock_PostconfModule(request, sample_config_str):
 @pytest.fixture
 def mock_Postconf():
     """Returns a constructor and load() method mocked Postconf class."""
-    with patch.object(Postconf, "load", MagicMock()), patch("library.postconf.Postconf") as mock:
-        mock.side_effect = lambda *args, **kwargs: Postconf(*args, **kwargs)
+    with patch.object(Postconf, "load", MagicMock()), patch(
+        "ansible_collections.koichirok.postconf.plugins.modules.postconf.Postconf"
+    ) as mock:
+        mock.side_effect = lambda *args, **kwargs: Postconf(*args, **kwargs)  # pylint: disable=unnecessary-lambda
         yield mock
 
 
@@ -127,7 +132,7 @@ def test_PostconfModule_initializes_postconf_instance(set_module_args, mock_Post
     assert module.conf is not None
 
     # Verify Postconf instance has correct configuration
-    from library.postconf import Postconf
+    from ansible_collections.koichirok.postconf.plugins.modules.postconf import Postconf
 
     assert isinstance(module.conf, Postconf)
     assert module.conf._bin_path == "/usr/local/sbin/postconf"

@@ -1,0 +1,28 @@
+---
+namespace: koichirok
+name: postconf
+version: 1.0.0
+readme: README.md
+authors:
+  - KIKUCHI Koichiro <koichirok@rworks.jp>
+description: Ansible collection for managing Postfix configuration
+license:
+  - MIT
+license_file: LICENSE
+tags:
+  - postfix
+  - mail
+  - configuration
+  - system
+repository: https://github.com/koichirok/ansible-module-postconf
+documentation: https://github.com/koichirok/ansible-module-postconf
+homepage: https://github.com/koichirok/ansible-module-postconf
+issues: https://github.com/koichirok/ansible-module-postconf/issues
+build_ignore:
+  - "*.pyc"
+  - "*.pyo"
+  - "__pycache__"
+  - ".git*"
+  - ".pytest_cache"
+  - "tests/fixtures/*"
+dependencies: {}

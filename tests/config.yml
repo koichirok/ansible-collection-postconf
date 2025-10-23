@@ -1,0 +1,5 @@
+---
+modules:
+  python_requires: default
+units:
+  requirements: tests/requirements.txt

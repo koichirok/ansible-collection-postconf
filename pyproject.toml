@@ -9,6 +9,8 @@ dependencies = [
 dev = [
     "black",
     "pytest",
+    "pytest-xdist",
+    "flake8",
 ]
 
 [tool.black]

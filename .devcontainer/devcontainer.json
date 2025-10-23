@@ -3,7 +3,7 @@
 	"image": "mcr.microsoft.com/devcontainers/base:noble",
 	"features": {
 		"ghcr.io/devcontainers-extra/features/ansible:2": {
-			"injections": "molecule molecule-plugins[docker] pytest ansible-lint"
+			"injections": "molecule molecule-plugins[docker] ansible-lint pytest pytest-xdist"
 		},
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
 		"ghcr.io/devcontainers-extra/features/black": {}
@@ -28,6 +28,7 @@
 				},
 				"python.venvPath": "/usr/local/py-utils/venvs",
 				"python.defaultInterpreterPath": "/usr/local/py-utils/venvs/ansible-core/bin/python3",
+				"python.analysis.extraPaths": ["/"],
 				"[python]": {
 					"editor.defaultFormatter": "ms-python.black-formatter",
 					"editor.formatOnSave": true
