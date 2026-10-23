@@ -6,7 +6,7 @@ from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import
 def test_guess_separator():
     assert guess_separator("cyrus_sasl_config_path", "") == ":"
     assert guess_separator("canonical_classes", "envelope_sender, envelope_recipient, header_sender, header_recipient") == ", "
-    assert guess_separator("lmtp_pix_workarounds", "disable_esmtp,delay_dotcrlf") == ","
+    assert guess_separator("lmtp_pix_workarounds", "disable_esmtp,delay_dotcrlf") == ", "
     assert guess_separator("postmulti_stop_commands", "stop abort drain quick-stop") == " "
 
 

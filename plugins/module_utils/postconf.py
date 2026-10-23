@@ -6,8 +6,10 @@ from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 
 import os
+import struct
+import sys
 from collections import OrderedDict
-from typing import Optional, Union
+from typing import Optional
 
 
 def guess_separator(param: str, value: str, default: str = ", ") -> str:
@@ -22,11 +24,8 @@ def guess_separator(param: str, value: str, default: str = ", ") -> str:
     """
     if param == "cyrus_sasl_config_path":
         return ":"
-    elif value.find(", ") >= 0:
-        return ", "
     elif value.find(",") >= 0:
-        # I'm not sure if this is ever used
-        return ","
+        return ", "
     elif value.find(" ") >= 0:
         return " "
     return default
@@ -71,12 +70,14 @@ class Postconf:
     def __getitem__(self, name: str) -> str:
         return self.config[name]
 
-    def __setitem__(self, name: str, value: Union[str, "list[str]"]):
+    def __setitem__(self, name: str, value: object):
         if name not in self.config:
             raise KeyError(f"Unknown Postfix parameter: {name}")
 
         if isinstance(value, list):
             value = guess_separator(name, self.config[name]).join(map(str, value))
+        else:
+            value = str(value)
 
         if self.config[name] != value:
             if self.backup is None:
@@ -86,7 +87,7 @@ class Postconf:
             if self.backup[name] != value:
                 self.new_params[name] = value
             else:
-                del self.new_params[name]
+                self.new_params.pop(name, None)
 
     def __contains__(self, name: str) -> bool:
         return name in self.config
@@ -140,16 +141,31 @@ class Postconf:
         return self._make_command_base()
 
     def make_update_config_commands(self) -> "list[list[str]]":
+        if not self.new_params:
+            return []
+
+        # execve counts encoded strings, NUL terminators and argv/envp pointers.
+        pointer_size = struct.calcsize("P")
+        environment_size = sum(len(os.fsencode(f"{k}={v}")) + 1 + pointer_size for k, v in os.environ.items())
+        budget = self.arg_max - environment_size - 2 * pointer_size - 2048
+        max_arg_length = 32 * os.sysconf("SC_PAGESIZE") if sys.platform == "linux" else None
         cmds = []
         cmd = self._make_command_base()
         cmd.append("-e")
-        base_command_length = sum(len(i) for i in cmd) + len(cmd) - 1
+        base_command_length = sum(len(os.fsencode(i)) + 1 + pointer_size for i in cmd)
+        if max_arg_length is not None and any(len(os.fsencode(i)) + 1 > max_arg_length for i in cmd):
+            raise ValueError("Postconf command path exceeds the single-argument limit")
         params = []
         cmd_length = base_command_length
         for k, v in self.new_params.items():
             param = f"{k}={v}"
-            param_length = 1 + len(param)  # space + param
-            if cmd_length + param_length > self.arg_max:
+            string_length = len(os.fsencode(param)) + 1
+            if max_arg_length is not None and string_length > max_arg_length:
+                raise ValueError(f"Postfix parameter {k} exceeds the single-argument limit ({max_arg_length} bytes)")
+            param_length = string_length + pointer_size
+            if base_command_length + param_length > budget:
+                raise ValueError(f"Postfix parameter {k} exceeds the available command argument budget")
+            if params and cmd_length + param_length > budget:
                 cmds.append(cmd + params)
                 params = []
                 cmd_length = base_command_length

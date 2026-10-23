@@ -49,12 +49,18 @@ def mock_PostconfModule(request, sample_config_str):
 
 
 @pytest.fixture
+def mock_main_cf_exists():
+    with patch("os.path.isfile", return_value=True):
+        yield
+
+
+@pytest.fixture
 def mock_Postconf():
     """Returns a constructor and load() method mocked Postconf class."""
     with patch.object(Postconf, "load", MagicMock()), patch(
         "ansible_collections.koichirok.postconf.plugins.modules.postconf.Postconf"
     ) as mock:
-        mock.side_effect = lambda *args, **kwargs: Postconf(*args, **kwargs)  # pylint: disable=unnecessary-lambda
+        mock.side_effect = Postconf
         yield mock
 
 
@@ -187,7 +193,17 @@ def test_PostconfModule_update_config_unknown_parameter(set_module_args, mock_Po
     # Should call fail_json for unknown parameter
     mock_PostconfModule["fail_json"].assert_called_once()
     call_args = mock_PostconfModule["fail_json"].call_args[1]
-    assert "Unknown Postfix parameter" in call_args["msg"]
+    assert call_args["msg"] == "Unknown Postfix parameter: unknown_parameter"
+
+
+def test_PostconfModule_run_unchanged_diff(set_module_args, mock_PostconfModule):
+    set_module_args({"config": {"myhostname": "mail.example.com"}, "_ansible_diff": True})
+    module = PostconfModule.newinstance()
+    module.run()
+    result = mock_PostconfModule["exit_json"].call_args.kwargs
+    assert result["changed"] is False
+    assert result["diff"]["before"] == result["diff"]["after"]
+    mock_PostconfModule["run_command"].assert_called_once()
 
 
 def test_PostconfModule_build_diff(set_module_args, mock_PostconfModule):
@@ -207,7 +223,7 @@ def test_PostconfModule_build_diff(set_module_args, mock_PostconfModule):
     assert "myhostname = newhost.example.com" in module.diff["after"]
 
 
-def test_PostconfModule_make_backup_default(set_module_args, mock_PostconfModule):
+def test_PostconfModule_make_backup_default(set_module_args, mock_PostconfModule, mock_main_cf_exists):
     """Test PostconfModule.make_backup method with default suffix"""
     set_module_args({"backup": True})
     module = PostconfModule.newinstance()
@@ -217,7 +233,7 @@ def test_PostconfModule_make_backup_default(set_module_args, mock_PostconfModule
     assert backup_path == "/etc/postfix/main.cf.YYYY-MM-DD@HH:MM:SS~"
 
 
-def test_PostconfModule_make_backup_custom_suffix(set_module_args, mock_PostconfModule):
+def test_PostconfModule_make_backup_custom_suffix(set_module_args, mock_PostconfModule, mock_main_cf_exists):
     """Test PostconfModule.make_backup method with custom suffix"""
     set_module_args({"backup": True, "backup_suffix": ".custom"})
 
@@ -230,7 +246,7 @@ def test_PostconfModule_make_backup_custom_suffix(set_module_args, mock_Postconf
 
 
 @pytest.mark.parametrize("mock_PostconfModule", [{"preserved_copy": IOError("Permission denied")}], indirect=True)
-def test_PostconfModule_make_backup_copy_error(set_module_args, mock_PostconfModule):
+def test_PostconfModule_make_backup_copy_error(set_module_args, mock_PostconfModule, mock_main_cf_exists):
     """Test PostconfModule.make_backup method when copy fails"""
     set_module_args({"backup": True, "backup_suffix": ".custom"})
 
@@ -241,6 +257,31 @@ def test_PostconfModule_make_backup_copy_error(set_module_args, mock_PostconfMod
     mock_PostconfModule["fail_json"].assert_called_once()
     call_args = mock_PostconfModule["fail_json"].call_args[1]
     assert "Could not make backup" in call_args["msg"]
+
+
+@pytest.mark.parametrize("suffix", [None, ".bak"])
+def test_PostconfModule_missing_backup_source(set_module_args, mock_PostconfModule, tmp_path, suffix):
+    set_module_args({"config_dir": str(tmp_path), "backup": True, "backup_suffix": suffix})
+    module = PostconfModule.newinstance()
+    with patch("os.path.isfile", return_value=False), patch.object(module, "fail_json", side_effect=SystemExit):
+        with pytest.raises(SystemExit):
+            module.make_backup()
+        module.fail_json.assert_called_once_with(msg=f"main.cf not found in {tmp_path}")
+    mock_PostconfModule["backup_local"].assert_not_called()
+    mock_PostconfModule["preserved_copy"].assert_not_called()
+
+
+@pytest.mark.parametrize("check_mode", [False, True])
+def test_PostconfModule_invalid_command_fails_before_backup(set_module_args, mock_PostconfModule, check_mode):
+    set_module_args({"config": {"myhostname": "x" * 1000}, "backup": True, "_ansible_check_mode": check_mode})
+    module = PostconfModule.newinstance()
+    module.conf.arg_max = 1
+    with patch.object(module, "fail_json", side_effect=SystemExit), patch.object(module, "make_backup") as backup:
+        with pytest.raises(SystemExit):
+            module.run()
+        assert "argument budget" in module.fail_json.call_args.kwargs["msg"]
+        backup.assert_not_called()
+    mock_PostconfModule["run_command"].assert_called_once()
 
 
 def test_PostconfModule_apply_changes_success(set_module_args, mock_PostconfModule):

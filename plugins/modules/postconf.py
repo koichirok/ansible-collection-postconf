@@ -24,6 +24,8 @@ options:
         - A dictionary of Postfix configuration parameters and their desired values.
         - If a parameter is not specified, its current value will be retained.
         - If a parameter is specified with a list value, it will be joined using an appropriate separator.
+        - Other values are converted to strings using Python's C(str), including booleans and null.
+        - Use quoted C('yes') and C('no') for Postfix boolean settings, and C('') for an empty value.
         type: dict
         required: false
         default: {}
@@ -94,7 +96,7 @@ diff:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils._text import to_text
+from ansible.module_utils.common.text.converters import to_text
 from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import Postconf, str_config_dict
 import os
 import shutil
@@ -135,6 +137,8 @@ class PostconfModule(AnsibleModule):
 
     def make_backup(self):
         src = self.conf.main_cf_path
+        if not os.path.isfile(src):
+            self.fail_json(msg=f"main.cf not found in {self.conf.config_directory}")
         suffix = self.params["backup_suffix"]
         if suffix is None:
             # Use AnsibleModule's built-in backup mechanism
@@ -151,12 +155,12 @@ class PostconfModule(AnsibleModule):
         for param, value in self.params["config"].items():
             try:
                 self.conf[param] = value
-            except Exception as e:
-                self.fail_json(msg=to_text(e))
+            except KeyError as e:
+                self.fail_json(msg=to_text(e.args[0]))
 
     def build_diff(self):
-        if self.conf.backup is not None:
-            self.diff["before"] = str_config_dict(self.conf.backup)
+        before = self.conf.backup if self.conf.backup is not None else self.conf.config
+        self.diff["before"] = str_config_dict(before)
         self.diff["after"] = str(self.conf)
 
     def apply_changes(self):
@@ -167,6 +171,11 @@ class PostconfModule(AnsibleModule):
 
     def run(self) -> None:
         self.update_config()
+
+        try:
+            self.conf.make_update_config_commands()
+        except ValueError as e:
+            self.fail_json(msg=to_text(e))
 
         if self._diff:
             self.build_diff()

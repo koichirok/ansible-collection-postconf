@@ -1,8 +1,12 @@
 # tests/test_postconf_Postconf.py
 
 import pytest
+import os
+import struct
+import sys
+from pathlib import Path
 from collections import OrderedDict
-from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import Postconf
+from ansible_collections.koichirok.postconf.plugins.module_utils.postconf import Postconf, dict_config_str
 
 
 def test_postconf_load_and_str(sample_config_str, sample_config_dict):
@@ -71,6 +75,37 @@ def test_postconf_setitem_list_value(sample_config_str):
     assert pc.changed
 
 
+@pytest.mark.parametrize("value, expected", [(2, "2"), (True, "True"), (False, "False"), (None, "None")])
+def test_postconf_scalar_values_are_strings_and_idempotent(value, expected):
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load("parameter = old")
+    pc["parameter"] = value
+    assert pc["parameter"] == expected
+    assert pc.new_params == {"parameter": expected}
+    assert dict_config_str(str(pc)) == pc.config
+    pc.load(str(pc))
+    pc["parameter"] = value
+    assert not pc.changed
+
+
+def test_postconf_repeated_assignments_and_reverts():
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load("parameter = 2")
+    for value in (3, 3, 4, 2, 2, 5, 2):
+        pc["parameter"] = value
+        assert pc.changed is (value != 2)
+        assert pc.new_params == ({"parameter": str(value)} if value != 2 else {})
+
+
+def test_postconf_list_separator_compatibility():
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load("parameter = a,b\ncyrus_sasl_config_path = /a:/b")
+    pc["parameter"] = ["c", "d"]
+    pc["cyrus_sasl_config_path"] = ["/c", "/d"]
+    assert pc["parameter"] == "c, d"
+    assert pc["cyrus_sasl_config_path"] == "/c:/d"
+
+
 def test_postconf_setitem_unknown_param(sample_config_str):
     pc = Postconf("/usr/sbin/postconf")
     pc.load(sample_config_str)
@@ -119,9 +154,10 @@ def test_postconf_make_get_all_config_command_with_custom_config_dir():
     assert pc.make_get_all_config_command() == ["/usr/sbin/postconf", "-c", "/custom/dir"]
 
 
-def test_postconf_make_update_config_commands_argmax(sample_config_str):
+def test_postconf_make_update_config_commands_argmax(sample_config_str, monkeypatch):
     # Simulate a small ARG_MAX to force splitting
-    pc = Postconf("/usr/sbin/postconf", "/etc/postfix", arg_max=60)
+    monkeypatch.setattr(os, "environ", {})
+    pc = Postconf("/usr/sbin/postconf", "/etc/postfix", arg_max=2200)
     pc.load(sample_config_str)
     pc["myhostname"] = "host1"
     pc["mydestination"] = "a, b, c, d, e, f, g"
@@ -132,6 +168,76 @@ def test_postconf_make_update_config_commands_argmax(sample_config_str):
     assert "-e" in cmds[0]
     assert any("myhostname=host1" in arg for arg in cmds[0])
     assert any("mydestination=a, b, c, d, e, f, g" in arg for arg in cmds[1])
+
+
+@pytest.mark.parametrize("value", ["x" * 80, "\u3042" * 40])
+def test_postconf_command_budget_includes_environment_and_bytes(monkeypatch, value):
+    monkeypatch.setattr(os, "environ", {"POSTCONF_TEST": "\u3042" * 10})
+    pc = Postconf("/postconf", arg_max=2300)
+    pc.load("a = old\nb = old")
+    pc["a"] = value
+    pc["b"] = value
+    commands = pc.make_update_config_commands()
+    assert len(commands) == 2
+    pointer_size = struct.calcsize("P")
+    environment_size = len(os.fsencode("POSTCONF_TEST=" + "\u3042" * 10)) + 1 + pointer_size
+    for command in commands:
+        size = sum(len(os.fsencode(arg)) + 1 + pointer_size for arg in command)
+        assert size + environment_size + 2 * pointer_size + 2048 <= pc.arg_max
+        assert len(command) == 3
+
+
+def test_postconf_rejects_parameter_larger_than_command_budget(monkeypatch):
+    monkeypatch.setattr(os, "environ", {})
+    pc = Postconf("/postconf", arg_max=2200)
+    pc.load("a = old")
+    pc["a"] = "x" * 1000
+    with pytest.raises(ValueError, match="a.*argument budget"):
+        pc.make_update_config_commands()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux per-string argument limit")
+def test_postconf_rejects_single_oversized_argument():
+    pc = Postconf("/postconf", arg_max=2 * 1024 * 1024)
+    pc.load("a = old")
+    pc["a"] = "x" * (os.sysconf("SC_PAGESIZE") * 32)
+    with pytest.raises(ValueError, match="a.*single-argument limit"):
+        pc.make_update_config_commands()
+
+
+def test_postconf_no_changes_does_not_emit_empty_command():
+    pc = Postconf("/postconf", arg_max=1)
+    assert pc.make_update_config_commands() == []
+
+
+@pytest.mark.parametrize("release, version", [("jammy", "3.6.4"), ("noble", "3.8.6")])
+def test_postconf_with_real_output_fixtures(release, version):
+    fixture = Path(__file__).parents[2] / "fixtures" / f"postconf-output-{release}.txt"
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(fixture.read_text(encoding="utf-8"))
+    assert pc["mail_version"] == version
+    assert pc.config_directory == "/etc/postfix"
+    assert pc["relayhost"] == ""
+    pc["default_process_limit"] = 100
+    assert not pc.changed
+    pc["default_process_limit"] = 123
+    pc["lmtp_pix_workarounds"] = ["disable_esmtp", "delay_dotcrlf"]
+    assert pc["lmtp_pix_workarounds"] == "disable_esmtp, delay_dotcrlf"
+    pc.load(str(pc))
+    pc["default_process_limit"] = 123
+    pc["lmtp_pix_workarounds"] = ["disable_esmtp", "delay_dotcrlf"]
+    assert not pc.changed
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux per-string argument limit")
+def test_postconf_single_argument_at_limit():
+    pc = Postconf("/postconf", arg_max=2 * 1024 * 1024)
+    pc.load("a = old")
+    limit = os.sysconf("SC_PAGESIZE") * 32
+    pc["a"] = "x" * (limit - 3)
+    commands = pc.make_update_config_commands()
+    assert len(commands) == 1
+    assert len(os.fsencode(commands[0][-1])) + 1 == limit
 
 
 def test_postconf_iter(sample_config_str):
