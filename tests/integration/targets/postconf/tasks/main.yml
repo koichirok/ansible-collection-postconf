@@ -1,0 +1,33 @@
+---
+- name: Create isolated configuration directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: postconf-test-
+  register: postconf_test_dir
+
+- name: Exercise the module with real Postfix
+  block:
+    - name: Write original configuration
+      ansible.builtin.copy:
+        dest: "{{ postconf_test_dir.path }}/main.cf"
+        content: |
+          myhostname = original.example.test
+          mydestination = original.example.test,localhost
+          default_process_limit = 101
+          relayhost = [original.example.test]
+          smtpd_banner = Keep this unspecified value
+        mode: "0600"
+
+    - name: Exercise basic updates and check mode
+      ansible.builtin.include_tasks: basic.yml
+
+    - name: Exercise backups and idempotency
+      ansible.builtin.include_tasks: backup.yml
+
+    - name: Exercise error handling
+      ansible.builtin.include_tasks: errors.yml
+  always:
+    - name: Remove isolated configuration
+      ansible.builtin.file:
+        path: "{{ postconf_test_dir.path }}"
+        state: absent

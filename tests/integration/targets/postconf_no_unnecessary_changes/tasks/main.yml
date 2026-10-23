@@ -1,0 +1,171 @@
+---
+- name: Create isolated no-change test directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: postconf-no-change-
+  register: no_change_root
+
+- name: Verify equivalent inputs do not cause writes
+  block:
+    - name: Create directory for reading this installation's defaults
+      ansible.builtin.file:
+        path: "{{ no_change_root.path }}/defaults"
+        state: directory
+        mode: "0700"
+
+    - name: Write minimal configuration
+      ansible.builtin.copy:
+        dest: "{{ no_change_root.path }}/defaults/main.cf"
+        content: "{{ no_change_seed }}"
+        mode: "0600"
+
+    - name: Read this installation's defaults directly from postconf
+      ansible.builtin.command:
+        argv: [postconf, -c, "{{ no_change_root.path }}/defaults", -d, -h, "{{ item }}"]
+      loop:
+        - default_process_limit
+        - relayhost
+        - smtpd_sasl_auth_enable
+        - lmtp_pix_workarounds
+        - postmulti_stop_commands
+      changed_when: false
+      register: native_defaults
+
+    - name: Verify test prerequisites rather than silently skipping cases
+      ansible.builtin.assert:
+        that:
+          - native_defaults.results[0].stdout is match('^[0-9]+$')
+          - native_defaults.results[1].stdout == ''
+          - native_defaults.results[2].stdout in ['yes', 'no']
+          - native_defaults.results[3].stdout.split(',') | length > 1
+          - native_defaults.results[4].stdout.split() | length > 1
+
+    - name: Define default and equivalent-representation cases
+      ansible.builtin.set_fact:
+        no_change_cases:
+          - name: omitted_configuration
+            seed: "{{ no_change_seed }}"
+            config: {}
+          - name: default_scalar_and_empty_values
+            seed: "{{ no_change_seed }}"
+            config:
+              default_process_limit: "{{ native_defaults.results[0].stdout | int }}"
+              relayhost: "{{ native_defaults.results[1].stdout }}"
+              smtpd_sasl_auth_enable: "{{ native_defaults.results[2].stdout }}"
+          - name: default_comma_list_as_exact_string
+            seed: "{{ no_change_seed }}"
+            config:
+              lmtp_pix_workarounds: "{{ native_defaults.results[3].stdout }}"
+          - name: default_comma_list_as_list
+            seed: "{{ no_change_seed }}"
+            config:
+              lmtp_pix_workarounds: "{{ native_defaults.results[3].stdout.split(',') | map('trim') | list }}"
+          - name: default_space_list_as_list
+            seed: "{{ no_change_seed }}"
+            config:
+              postmulti_stop_commands: "{{ native_defaults.results[4].stdout.split() }}"
+          - name: explicit_comma_list_without_spaces
+            seed: "{{ no_change_seed }}mydestination = mail.example.test,localhost\n"
+            config:
+              mydestination: [mail.example.test, localhost]
+          - name: explicit_comma_list_with_spaces
+            seed: "{{ no_change_seed }}mydestination = mail.example.test, localhost\n"
+            config:
+              mydestination: [mail.example.test, localhost]
+          - name: explicit_space_list
+            seed: "{{ no_change_seed }}postmulti_stop_commands = stop abort\n"
+            config:
+              postmulti_stop_commands: [stop, abort]
+          - name: explicit_colon_list
+            seed: "{{ no_change_seed }}cyrus_sasl_config_path = /first:/second\n"
+            config:
+              cyrus_sasl_config_path: [/first, /second]
+
+    - name: Create independent directories for each case and mode
+      ansible.builtin.file:
+        path: "{{ no_change_root.path }}/{{ item.0.name }}-{{ item.1 }}"
+        state: directory
+        mode: "0700"
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} ({{ item.1 }})"
+
+    - name: Write seed configurations without explicit default overrides
+      ansible.builtin.copy:
+        dest: "{{ no_change_root.path }}/{{ item.0.name }}-{{ item.1 }}/main.cf"
+        content: "{{ item.0.seed }}"
+        mode: "0600"
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} ({{ item.1 }})"
+
+    - name: Capture content and metadata before applying equivalent settings
+      ansible.builtin.stat:
+        path: "{{ no_change_root.path }}/{{ item.0.name }}-{{ item.1 }}/main.cf"
+        checksum_algorithm: sha256
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} ({{ item.1 }})"
+      register: equivalent_before
+
+    - name: Submit equivalent settings in normal and check mode
+      koichirok.postconf.postconf:
+        config_dir: "{{ no_change_root.path }}/{{ item.0.name }}-{{ item.1 }}"
+        config: "{{ item.0.config }}"
+        backup: true
+        backup_suffix: .unexpected-backup
+      check_mode: "{{ item.1 == 'check' }}"
+      diff: true
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} ({{ item.1 }})"
+      register: equivalent_results
+
+    - name: Capture content and metadata after equivalent settings
+      ansible.builtin.stat:
+        path: "{{ no_change_root.path }}/{{ item.0.name }}-{{ item.1 }}/main.cf"
+        checksum_algorithm: sha256
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} ({{ item.1 }})"
+      register: equivalent_after
+
+    - name: Find unexpected backups or temporary files
+      ansible.builtin.find:
+        paths: "{{ no_change_root.path }}/{{ item.0.name }}-{{ item.1 }}"
+        patterns: "*"
+        hidden: true
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        label: "{{ item.0.name }} ({{ item.1 }})"
+      register: equivalent_files
+
+    - name: Require no change, no diff, no file rewrite and no backup for every equivalent input
+      ansible.builtin.assert:
+        that:
+          - equivalent_results.results[case_index] is not changed
+          - equivalent_results.results[case_index].diff.before == equivalent_results.results[case_index].diff.after
+          - equivalent_after.results[case_index].stat.checksum == equivalent_before.results[case_index].stat.checksum
+          - equivalent_after.results[case_index].stat.mtime == equivalent_before.results[case_index].stat.mtime
+          - equivalent_after.results[case_index].stat.inode == equivalent_before.results[case_index].stat.inode
+          - equivalent_after.results[case_index].stat.mode == equivalent_before.results[case_index].stat.mode
+          - equivalent_files.results[case_index].matched == 1
+        fail_msg: >-
+          Unnecessary change: {{ item.0.name }} ({{ item.1 }}),
+          changed={{ equivalent_results.results[case_index].changed }},
+          content_changed={{ equivalent_after.results[case_index].stat.checksum != equivalent_before.results[case_index].stat.checksum }},
+          files={{ equivalent_files.results[case_index].files | map(attribute='path') | list }}.
+          Keep this test failing pending a decision; do not normalize the expectation to current behavior.
+      loop: "{{ no_change_cases | product(['apply', 'check']) | list }}"
+      loop_control:
+        index_var: case_index
+        label: "{{ item.0.name }} ({{ item.1 }})"
+  always:
+    - name: Remove all isolated no-change configurations
+      ansible.builtin.file:
+        path: "{{ no_change_root.path }}"
+        state: absent
+  vars:
+    no_change_seed: |
+      # Preserve this comment, spacing, and all omitted defaults.
+      myhostname   =   mail.example.test

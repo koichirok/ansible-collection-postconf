@@ -1,0 +1,110 @@
+---
+- name: Capture configuration before backup
+  ansible.builtin.slurp:
+    src: "{{ postconf_test_dir.path }}/main.cf"
+  register: before_backup
+
+- name: Apply change with custom backup suffix
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config:
+      default_process_limit: 124
+    backup: true
+    backup_suffix: .bak
+  register: custom_backup
+
+- name: Read custom backup
+  ansible.builtin.slurp:
+    src: "{{ postconf_test_dir.path }}/main.cf.bak"
+  register: saved_backup
+
+- name: Capture file metadata before repeat
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/{{ item }}"
+    checksum_algorithm: sha256
+  loop: [main.cf, main.cf.bak]
+  register: before_repeat
+
+- name: Repeat configuration with backup enabled
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config:
+      default_process_limit: 124
+    backup: true
+    backup_suffix: .bak
+  diff: true
+  register: repeated
+
+- name: Capture file metadata after repeat
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/{{ item }}"
+    checksum_algorithm: sha256
+  loop: [main.cf, main.cf.bak]
+  register: after_repeat
+
+- name: Verify idempotency preserves both configuration and backup
+  ansible.builtin.assert:
+    that:
+      - custom_backup is changed
+      - saved_backup.content == before_backup.content
+      - repeated is not changed
+      - repeated.diff.before == repeated.diff.after
+      - before_repeat.results | map(attribute='stat.checksum') | list == after_repeat.results | map(attribute='stat.checksum') | list
+      - before_repeat.results | map(attribute='stat.mtime') | list == after_repeat.results | map(attribute='stat.mtime') | list
+      - before_repeat.results | map(attribute='stat.inode') | list == after_repeat.results | map(attribute='stat.inode') | list
+
+- name: Capture configuration before timestamped backup
+  ansible.builtin.slurp:
+    src: "{{ postconf_test_dir.path }}/main.cf"
+  register: before_timestamped
+
+- name: Apply change using timestamped backup
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config:
+      default_process_limit: 125
+    backup: true
+  register: timestamped
+
+- name: Find timestamped backup
+  ansible.builtin.find:
+    paths: "{{ postconf_test_dir.path }}"
+    patterns: "main.cf.*~"
+    get_checksum: true
+  register: timestamped_backups
+
+- name: Verify timestamped backup creation
+  ansible.builtin.assert:
+    that:
+      - timestamped is changed
+      - timestamped_backups.matched == 1
+
+- name: Read timestamped backup
+  ansible.builtin.slurp:
+    src: "{{ timestamped_backups.files[0].path }}"
+  register: timestamped_content
+
+- name: Repeat configuration with timestamped backup enabled
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config:
+      default_process_limit: 125
+    backup: true
+  register: timestamped_again
+
+- name: Find backups after repeat
+  ansible.builtin.find:
+    paths: "{{ postconf_test_dir.path }}"
+    patterns: "main.cf.*~"
+    get_checksum: true
+  register: backups_after_repeat
+
+- name: Verify timestamped backup content and no extra backups
+  ansible.builtin.assert:
+    that:
+      - timestamped_content.content == before_timestamped.content
+      - timestamped_again is not changed
+      - backups_after_repeat.matched == 1
+      - backups_after_repeat.files[0].checksum == timestamped_backups.files[0].checksum
+      - backups_after_repeat.files[0].mtime == timestamped_backups.files[0].mtime
+      - backups_after_repeat.files[0].inode == timestamped_backups.files[0].inode

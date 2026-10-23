@@ -100,4 +100,74 @@ Adjust the Python executable to the environment containing ansible-core and
 pytest. The import mode avoids name collisions between the module and
 module-utils test files.
 
+### Integration tests
+
+The integration targets install Postfix and use temporary configuration
+directories. They require root/package-install privileges and network access
+to package repositories. Run them only in a disposable test host/container.
+They never edit the system `main.cf` or explicitly start, reload or restart
+Postfix. Package installation may run the distribution's service hooks.
+
+Use ansible-test's disposable container environment, for example:
+
+```sh
+ansible-test integration 'postconf.*' --docker ubuntu2404 --requirements
+```
+
+Inside an already provisioned disposable host/container, run each target
+separately to see both results even when one fails:
+
+```sh
+ansible-test integration postconf --local --allow-destructive
+ansible-test integration postconf_no_unnecessary_changes --local --allow-destructive
+```
+
+#### Test coverage
+
+- `postconf`: real command readback, string/integer/empty values, scalar
+  conversions, list separators, preservation of unspecified parameters,
+  check/diff modes, idempotency, disabled/custom/timestamped backups, and
+  explicit errors without partial configuration writes.
+- `postconf_no_unnecessary_changes`: submitting effective defaults or
+  semantically equivalent list values must not report a change or a diff,
+  rewrite `main.cf`, change its modification time/inode/mode, or create a
+  backup or temporary file. Each case runs in both normal and check mode,
+  in independent directories. Defaults come from the installed `postconf -d`,
+  not a distribution-specific fixture. Comments and existing whitespace
+  must survive a no-op byte for byte.
+
+The no-change contract includes default comma-separated lists supplied as
+lists, and explicitly configured comma-separated lists with or without
+spaces. This is a requirement, not an assumption that the current module
+already satisfies it. Keep genuine failures visible; do not skip them,
+mark them as expected failures, or change the module just to pass them
+without a separate decision. This does not claim to test every form of
+Postfix expression or semantic equivalence.
+
+The general target sets its own initial values rather than assuming Postfix
+defaults. Assertions compare only relevant parameters across separate
+command invocations: runtime values such as `process_id` can differ.
+Both targets clean up their configuration directories even after failure.
+ARG_MAX boundaries and backup-source disappearance are covered by unit
+tests rather than timing-dependent integration scenarios.
+
+#### Current integration results
+
+Tested with ansible-core 2.21.5 in disposable containers:
+
+| Environment | Target Python | Postfix | General target | No-unnecessary-changes target |
+| --- | --- | --- | --- | --- |
+| Debian 13 | 3.13.5 | 3.10.13 | Pass | 14 cases pass, 4 fail |
+| Ubuntu 24.04 | 3.12.3 | 3.8.6 | Pass | 14 cases pass, 4 fail |
+
+The failures are `default_comma_list_as_list` and
+`explicit_comma_list_without_spaces`, each in normal and check mode.
+For example, the effective default `disable_esmtp,delay_dotcrlf` becomes
+`disable_esmtp, delay_dotcrlf` when submitted as a list. The module compares
+the strings literally and reports a change despite equivalent list contents.
+In normal mode this rewrites the file and creates a backup; check mode reports
+a change/diff without writing. These are unresolved contract failures, not
+expected-failure exemptions. The module implementation is unchanged by this
+integration-test work, pending a decision about equivalent-value comparison.
+
 The collection is distributed under the MIT license.

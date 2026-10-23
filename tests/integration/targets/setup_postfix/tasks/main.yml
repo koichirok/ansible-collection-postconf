@@ -1,0 +1,32 @@
+---
+- name: Update package metadata on Debian-family disposable hosts
+  ansible.builtin.apt:
+    update_cache: true
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Install Postfix in the disposable test host
+  ansible.builtin.package:
+    name: postfix
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  when: ansible_facts.system != 'FreeBSD'
+
+- name: Install Postfix in the disposable FreeBSD VM
+  ansible.builtin.command:
+    argv: [pkg, install, --yes, postfix]
+    creates: /usr/local/sbin/postconf
+  when: ansible_facts.system == 'FreeBSD'
+
+- name: Read installed Postfix version
+  ansible.builtin.command:
+    argv: [postconf, mail_version]
+  changed_when: false
+  register: setup_postfix_version
+
+- name: Report actual integration platform
+  ansible.builtin.debug:
+    msg: >-
+      {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }},
+      Python {{ ansible_facts.python_version }},
+      {{ setup_postfix_version.stdout }}

@@ -1,0 +1,59 @@
+---
+- name: Capture configuration before errors
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/main.cf"
+    checksum_algorithm: sha256
+  register: before_errors
+
+- name: Reject unknown parameter even after a valid pending change
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config:
+      myhostname: must-not-be-written.example.test
+      postconf_test_unknown_parameter: value
+    backup: true
+    backup_suffix: .error-backup
+  register: unknown_parameter
+  ignore_errors: true
+
+- name: Reject missing executable
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    postconf_path: "{{ postconf_test_dir.path }}/missing-postconf"
+    config:
+      myhostname: must-not-be-written.example.test
+  register: missing_executable
+  ignore_errors: true
+
+- name: Reject missing configuration directory
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}/missing"
+    config:
+      myhostname: must-not-be-written.example.test
+  register: missing_directory
+  ignore_errors: true
+
+- name: Capture configuration after errors
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/main.cf"
+    checksum_algorithm: sha256
+  register: after_errors
+
+- name: Check error backup was not created
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/main.cf.error-backup"
+  register: error_backup
+
+- name: Verify explicit failures and no configuration writes
+  ansible.builtin.assert:
+    that:
+      - unknown_parameter is failed
+      - "unknown_parameter.msg == 'Unknown Postfix parameter: postconf_test_unknown_parameter'"
+      - missing_executable is failed
+      - missing_executable.msg | length > 0
+      - missing_directory is failed
+      - "'Failed to execute postconf' in missing_directory.msg"
+      - before_errors.stat.checksum == after_errors.stat.checksum
+      - before_errors.stat.mtime == after_errors.stat.mtime
+      - before_errors.stat.inode == after_errors.stat.inode
+      - not error_backup.stat.exists

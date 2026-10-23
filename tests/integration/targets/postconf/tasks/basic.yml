@@ -1,0 +1,123 @@
+---
+- name: Read original configuration and metadata
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/main.cf"
+    checksum_algorithm: sha256
+  register: original_stat
+
+- name: Preview changes with backups enabled
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config: &test_config
+      myhostname: mail.example.test
+      default_process_limit: 123
+      mydestination:
+        - mail.example.test
+        - localhost
+      relayhost: ""
+    backup: true
+    backup_suffix: .bak
+  check_mode: true
+  diff: true
+  register: preview
+
+- name: Read configuration after preview
+  ansible.builtin.stat:
+    path: "{{ postconf_test_dir.path }}/main.cf"
+    checksum_algorithm: sha256
+  register: preview_stat
+
+- name: Find files after preview
+  ansible.builtin.find:
+    paths: "{{ postconf_test_dir.path }}"
+    patterns: "*"
+    hidden: true
+  register: preview_files
+
+- name: Verify check mode leaves the file and directory unchanged
+  ansible.builtin.assert:
+    that:
+      - preview is changed
+      - preview.diff.before != preview.diff.after
+      - preview_stat.stat.checksum == original_stat.stat.checksum
+      - preview_stat.stat.mtime == original_stat.stat.mtime
+      - preview_stat.stat.inode == original_stat.stat.inode
+      - preview_files.matched == 1
+
+- name: Apply changes without a backup
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config: *test_config
+  diff: true
+  register: applied
+
+- name: Read values independently with postconf
+  ansible.builtin.command:
+    argv:
+      - postconf
+      - -c
+      - "{{ postconf_test_dir.path }}"
+      - -h
+      - "{{ item }}"
+  loop:
+    - myhostname
+    - default_process_limit
+    - mydestination
+    - relayhost
+    - smtpd_banner
+  changed_when: false
+  register: readback
+
+- name: Find files after update without backup
+  ansible.builtin.find:
+    paths: "{{ postconf_test_dir.path }}"
+    patterns: "*"
+    hidden: true
+  register: applied_files
+
+- name: Verify actual values, diff and preservation of unspecified settings
+  ansible.builtin.assert:
+    that:
+      - applied is changed
+      - "'default_process_limit = 101' in applied.diff.before"
+      - "'default_process_limit = 123' in applied.diff.after"
+      - readback.results | map(attribute='stdout') | list == expected_values
+      - applied_files.matched == 1
+  vars:
+    expected_values:
+      - mail.example.test
+      - "123"
+      - mail.example.test, localhost
+      - ""
+      - Keep this unspecified value
+
+- name: Apply scalar conversions and list separators
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config: &conversion_config
+      smtpd_banner: true
+      relayhost: null
+      postmulti_stop_commands: [stop, abort]
+      cyrus_sasl_config_path: [/first, /second]
+  register: converted
+
+- name: Read converted values independently
+  ansible.builtin.command:
+    argv: [postconf, -c, "{{ postconf_test_dir.path }}", -h, "{{ item }}"]
+  loop: [smtpd_banner, relayhost, postmulti_stop_commands, cyrus_sasl_config_path]
+  changed_when: false
+  register: converted_readback
+
+- name: Repeat converted values
+  koichirok.postconf.postconf:
+    config_dir: "{{ postconf_test_dir.path }}"
+    config: *conversion_config
+  register: converted_again
+
+- name: Verify scalar conversions and separators
+  ansible.builtin.assert:
+    that:
+      - converted is changed
+      - converted_again is not changed
+      - converted_readback.results | map(attribute='stdout') | list == ['True', 'None', 'stop abort', '/first:/second']
+      - "'diff' not in converted_again"
