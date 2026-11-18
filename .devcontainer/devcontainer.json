@@ -1,11 +1,13 @@
 {
 	"name": "koichirok.postconf: ansible module for postconf",
-	"image": "mcr.microsoft.com/devcontainers/base:noble",
+	"image": "mcr.microsoft.com/devcontainers/base:trixie",
 	"features": {
 		"ghcr.io/devcontainers-extra/features/ansible:2": {
 			"injections": "molecule molecule-plugins[docker] ansible-lint pytest pytest-xdist"
 		},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:4.1.3": {
+			"moby": false
+		},
 		"ghcr.io/devcontainers-extra/features/black": {}
 	},
 	"workspaceMount": "source=${localWorkspaceFolder},target=/ansible_collections/koichirok/postconf,type=bind",
