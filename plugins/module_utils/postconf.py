@@ -6,6 +6,7 @@ from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 
 import os
+import re
 import struct
 import sys
 from collections import OrderedDict
@@ -29,6 +30,23 @@ def guess_separator(param: str, value: str, default: str = ", ") -> str:
     elif value.find(" ") >= 0:
         return " "
     return default
+
+
+def _equivalent_list(param: str, current: str, items: "list[str]") -> bool:
+    """Compare only known simple list grammars; leave complex Postfix syntax literal."""
+    if param in ("mydestination", "lmtp_pix_workarounds"):
+        separator = r"(?:[ \t]*,[ \t]*|[ \t]+)"
+    elif param == "postmulti_stop_commands":
+        separator = r"[ \t]+"
+    else:
+        return False
+
+    token = r"[-A-Za-z0-9_.$/]+"
+    if not items or any(re.fullmatch(token, item) is None for item in items):
+        return False
+    if re.fullmatch(token + "(?:" + separator + token + ")*", current) is None:
+        return False
+    return re.split(separator, current) == items
 
 
 def str_config_dict(configdict: dict) -> str:
@@ -75,7 +93,13 @@ class Postconf:
             raise KeyError(f"Unknown Postfix parameter: {name}")
 
         if isinstance(value, list):
-            value = guess_separator(name, self.config[name]).join(map(str, value))
+            items = list(map(str, value))
+            if _equivalent_list(name, self.config[name], items):
+                return
+            if self.backup is not None and _equivalent_list(name, self.backup[name], items):
+                value = self.backup[name]
+            else:
+                value = guess_separator(name, self.config[name]).join(items)
         else:
             value = str(value)
 

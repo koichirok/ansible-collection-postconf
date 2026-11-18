@@ -206,6 +206,41 @@ def test_PostconfModule_run_unchanged_diff(set_module_args, mock_PostconfModule)
     mock_PostconfModule["run_command"].assert_called_once()
 
 
+@pytest.mark.parametrize("check_mode", [False, True])
+@pytest.mark.parametrize("suffix", [None, ".existing-backup"])
+@pytest.mark.parametrize(
+    "name, current, value",
+    [
+        ("lmtp_pix_workarounds", "disable_esmtp,delay_dotcrlf", ["disable_esmtp", "delay_dotcrlf"]),
+        ("mydestination", "mail.example.test,localhost", ["mail.example.test", "localhost"]),
+    ],
+)
+def test_PostconfModule_equivalent_list_never_writes_or_backs_up(
+    set_module_args, mock_PostconfModule, check_mode, suffix, name, current, value
+):
+    set_module_args(
+        {
+            "config": {name: value},
+            "backup": True,
+            "backup_suffix": suffix,
+            "_ansible_check_mode": check_mode,
+            "_ansible_diff": True,
+        }
+    )
+    mock_PostconfModule["run_command"].side_effect = lambda cmd: (0, f"{name} = {current}", "")
+    module = PostconfModule.newinstance()
+    with patch.object(module, "make_backup") as backup:
+        module.run()
+        backup.assert_not_called()
+    result = mock_PostconfModule["exit_json"].call_args.kwargs
+    assert result["changed"] is False
+    assert result["config"][name] == current
+    assert result["diff"]["before"] == result["diff"]["after"] == f"{name} = {current}"
+    mock_PostconfModule["run_command"].assert_called_once_with(["/usr/sbin/postconf"])
+    mock_PostconfModule["backup_local"].assert_not_called()
+    mock_PostconfModule["preserved_copy"].assert_not_called()
+
+
 def test_PostconfModule_build_diff(set_module_args, mock_PostconfModule):
     """Test PostconfModule.build_diff method"""
     set_module_args({"config": {"myhostname": "newhost.example.com"}})

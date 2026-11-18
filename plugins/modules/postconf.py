@@ -24,6 +24,10 @@ options:
         - A dictionary of Postfix configuration parameters and their desired values.
         - If a parameter is not specified, its current value will be retained.
         - If a parameter is specified with a list value, it will be joined using an appropriate separator.
+        - For C(mydestination), C(lmtp_pix_workarounds), and C(postmulti_stop_commands), equivalent simple
+          list inputs retain the existing spelling without changes or backups.
+        - This comparison preserves order and duplicates and does not normalize complex expressions
+          or arbitrary parameters. See the collection README for the supported token syntax.
         - Other values are converted to strings using Python's C(str), including booleans and null.
         - Use quoted C('yes') and C('no') for Postfix boolean settings, and C('') for an empty value.
         type: dict

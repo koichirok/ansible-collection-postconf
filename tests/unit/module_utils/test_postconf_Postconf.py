@@ -106,6 +106,84 @@ def test_postconf_list_separator_compatibility():
     assert pc["cyrus_sasl_config_path"] == "/c:/d"
 
 
+@pytest.mark.parametrize(
+    "name, current, value",
+    [
+        ("lmtp_pix_workarounds", "disable_esmtp,delay_dotcrlf", ["disable_esmtp", "delay_dotcrlf"]),
+        ("lmtp_pix_workarounds", "disable_esmtp,\t delay_dotcrlf", ["disable_esmtp", "delay_dotcrlf"]),
+        ("mydestination", "mail.example.test,localhost", ["mail.example.test", "localhost"]),
+        ("mydestination", "$myhostname ,\tlocalhost", ["$myhostname", "localhost"]),
+        ("mydestination", "mail.example.test \t localhost", ["mail.example.test", "localhost"]),
+        ("mydestination", "a, b\tc", ["a", "b", "c"]),
+        ("postmulti_stop_commands", "stop \t abort", ["stop", "abort"]),
+        ("cyrus_sasl_config_path", "/first:/second", ["/first", "/second"]),
+        ("mydestination", "", []),
+        ("postmulti_stop_commands", "", []),
+        ("cyrus_sasl_config_path", "", []),
+        ("mydestination", "2,True,None", [2, True, None]),
+    ],
+)
+def test_postconf_equivalent_lists_preserve_original(name, current, value):
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(f"{name} = {current}")
+    before = str(pc)
+    pc[name] = value
+    assert not pc.changed
+    assert pc[name] == current
+    assert str(pc) == before
+    assert pc.backup is None
+    assert pc.new_params == {}
+    assert pc.make_update_config_commands() == []
+
+
+@pytest.mark.parametrize(
+    "name, current, value, expected",
+    [
+        ("mydestination", "a,b", ["b", "a"], "b, a"),
+        ("lmtp_pix_workarounds", "disable_esmtp,delay_dotcrlf", ["disable_esmtp"], "disable_esmtp"),
+        ("mydestination", "a,b", ["a", "c"], "a, c"),
+        ("mydestination", "a,b", ["a", "a", "b"], "a, a, b"),
+        ("mydestination", "a,b", [], ""),
+        ("postmulti_stop_commands", "stop abort", [], ""),
+        ("cyrus_sasl_config_path", "/first:/second", [], ""),
+        ("postmulti_stop_commands", "stop \t abort", ["abort", "stop"], "abort stop"),
+        ("cyrus_sasl_config_path", "/first: /second", ["/first", "/second"], "/first:/second"),
+        ("cyrus_sasl_config_path", "/first:/second", ["/second", "/first"], "/second:/first"),
+        ("smtpd_banner", "hello,world", ["hello", "world"], "hello, world"),
+        ("parameter", "a,b", ["a", "b"], "a, b"),
+        ("mydestination", "a,,b", ["a", "b"], "a, b"),
+        ("mydestination", "a,b,", ["a", "b"], "a, b"),
+        ("mydestination", "a,b", ["a", "", "b"], "a, , b"),
+        ("mydestination", "a,b", ["a ", "b"], "a , b"),
+        ("mydestination", "{a,b}", ["{a", "b}"], "{a, b}"),
+        ("mydestination", "${name?{a,b}:{c,d}}", ["${name?{a", "b}:{c", "d}}"], "${name?{a, b}:{c, d}}"),
+        ("mydestination", "(a,b)", ["(a", "b)"], "(a, b)"),
+        ("mydestination", '"a,b"', ['"a', 'b"'], '"a, b"'),
+        ("mydestination", "a\\,b", ["a\\", "b"], "a\\, b"),
+        ("mydestination", "a,b", "a, b", "a, b"),
+    ],
+)
+def test_postconf_non_equivalent_or_complex_values_still_change(name, current, value, expected):
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load(f"{name} = {current}")
+    pc[name] = value
+    assert pc.changed
+    assert pc[name] == expected
+    assert pc.backup == {name: current}
+    assert pc.new_params == {name: expected}
+    assert pc.make_update_config_commands() == [["/usr/sbin/postconf", "-e", f"{name}={expected}"]]
+
+
+def test_postconf_list_revert_restores_original_spelling():
+    pc = Postconf("/usr/sbin/postconf")
+    pc.load("mydestination = a,b")
+    pc["mydestination"] = ["c", "d"]
+    pc["mydestination"] = ["a", "b"]
+    assert pc["mydestination"] == "a,b"
+    assert not pc.changed
+    assert pc.make_update_config_commands() == []
+
+
 def test_postconf_setitem_unknown_param(sample_config_str):
     pc = Postconf("/usr/sbin/postconf")
     pc.load(sample_config_str)
@@ -220,9 +298,11 @@ def test_postconf_with_real_output_fixtures(release, version):
     assert pc["relayhost"] == ""
     pc["default_process_limit"] = 100
     assert not pc.changed
+    original_workarounds = pc["lmtp_pix_workarounds"]
     pc["default_process_limit"] = 123
     pc["lmtp_pix_workarounds"] = ["disable_esmtp", "delay_dotcrlf"]
-    assert pc["lmtp_pix_workarounds"] == "disable_esmtp, delay_dotcrlf"
+    assert pc["lmtp_pix_workarounds"] == original_workarounds
+    assert pc.new_params == {"default_process_limit": "123"}
     pc.load(str(pc))
     pc["default_process_limit"] = 123
     pc["lmtp_pix_workarounds"] = ["disable_esmtp", "delay_dotcrlf"]

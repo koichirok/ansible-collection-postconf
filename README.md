@@ -73,6 +73,30 @@ to clear a value. List elements are stringified and joined with `", "` for
 comma-separated values, `" "` for space-separated values, and `":"` for
 `cyrus_sasl_config_path`.
 
+List inputs also have a deliberately limited equivalence comparison:
+
+- For `mydestination` and `lmtp_pix_workarounds`, commas (with optional spaces
+  or tabs), spaces and tabs separate simple tokens.
+- For `postmulti_stop_commands`, spaces and tabs separate simple tokens.
+- Simple tokens contain only ASCII letters, digits, `_`, `.`, `$`, `/` and `-`.
+  Both the current value and every stringified input element must fit this
+  grammar. Elements must be nonempty; order and duplicates are preserved.
+  Repeated/trailing commas, expressions, braces, parentheses, quotes, escapes
+  and whitespace inside input elements are not normalized.
+- Other parameters and complex values retain the existing exact string
+  comparison after joining. In particular, `cyrus_sasl_config_path` still uses
+  `:` and does not strip whitespace from paths. Scalar inputs are not normalized.
+  An empty list still joins to an empty string.
+
+When a list is equivalent within this scope, the existing representation is
+retained: `changed=false`, identical diff before/after, no `postconf -e`, no
+configuration rewrite and no backup creation or overwrite. This also applies
+when the effective value comes from a built-in default reported by `postconf -d`
+rather than an explicit setting in `main.cf`; no explicit override is added.
+Actual element or order changes still use the existing separator-selection and
+update behavior. This is not a general Postfix expression parser or an attempt
+to evaluate variable expansions.
+
 Unknown parameters fail explicitly. Large updates are split into commands using
 the OS argument budget, including encoded byte lengths, environment variables,
 pointer overhead and a safety margin. Linux's per-argument limit is also checked.
