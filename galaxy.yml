@@ -8,7 +8,6 @@ authors:
 description: Ansible collection for managing Postfix configuration
 license:
   - MIT
-license_file: LICENSE
 tags:
   - postfix
   - mail

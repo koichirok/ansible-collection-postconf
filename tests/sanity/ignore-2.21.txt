@@ -1,0 +1,1 @@
+plugins/modules/postconf.py validate-modules:missing-gplv3-license # This collection is intentionally MIT-licensed.
