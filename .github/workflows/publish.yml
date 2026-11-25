@@ -1,0 +1,73 @@
+name: Publish to Ansible Galaxy
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: galaxy-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Test and publish collection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ansible_collections/koichirok/postconf
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          path: ansible_collections/koichirok/postconf
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ansible-core
+        run: python -m pip install ansible-core==2.21.5
+
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          import yaml
+
+          version = yaml.safe_load(Path("galaxy.yml").read_text())["version"]
+          expected_tag = f"v{version}"
+          if os.environ["RELEASE_TAG"] != expected_tag:
+              raise SystemExit(
+                  f"Release tag must be {expected_tag}, got {os.environ['RELEASE_TAG']}"
+              )
+          PY
+
+      - name: Run unit tests
+        run: ansible-test units --python 3.13 --requirements
+
+      - name: Run sanity tests
+        run: ansible-test sanity --python 3.13 --requirements
+
+      - name: Build collection
+        run: ansible-galaxy collection build --output-path "$RUNNER_TEMP"
+
+      - name: Publish collection
+        env:
+          GALAXY_API_KEY: ${{ secrets.GALAXY_API_KEY }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          ansible-galaxy collection publish \
+            "$RUNNER_TEMP/koichirok-postconf-${version}.tar.gz" \
+            --api-key "$GALAXY_API_KEY"
