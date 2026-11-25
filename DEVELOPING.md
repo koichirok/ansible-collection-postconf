@@ -20,10 +20,10 @@ pytest. `PYTHONPATH` points to the parent of `ansible_collections`; the import
 mode avoids name collisions between the module and module-utils test files.
 
 GitHub Actions runs unit tests, sanity checks, a collection build, and the
-Linux integration matrix on pull requests targeting `main`, pushes to `main`,
-and manual dispatch. The workflow checks out the collection at the required
-namespace path. Each Linux platform runs in a separate job; FreeBSD is not
-included in CI.
+Linux and FreeBSD integration tests on pull requests targeting `main`, pushes
+to `main`, and manual dispatch. The workflow checks out the collection at the
+required namespace path. Each Linux platform and the FreeBSD VM run in separate
+jobs.
 
 ## Integration tests
 
@@ -98,14 +98,23 @@ copies only a disposable checkout into the VM: AnyVM's copyback cannot alter
 the real checkout. The container, VM and disposable copy are removed on exit.
 It installs a Python 3.12 virtual environment with ansible-core 2.21.5 inside
 the guest, and runs the same two integration targets. FreeBSD's separate
-SQLite and cryptography Python packages are installed using `pkg` before
-creating the virtual environment.
+SQLite and cryptography Python packages and Expat are installed using `pkg`
+before creating the virtual environment.
 
 Run the Linux and FreeBSD commands separately and retain both exit statuses:
-each command returns nonzero if preparation or either target fails. The
-Linux platform matrix runs in GitHub Actions for pull requests and pushes to
-`main`. The FreeBSD VM runner remains a manual check on a KVM-enabled Linux
-host.
+each command returns nonzero if preparation or either target fails. GitHub
+Actions uses these same scripts for the Linux matrix and FreeBSD job. The
+FreeBSD job requires nested virtualization; GitHub describes it as
+[experimental on hosted runners](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners).
+
+### Running Actions locally
+
+The shared scripts above are the recommended way to run integration tests
+locally. [act](https://nektosact.com/) can help exercise workflow configuration,
+but its Linux jobs normally run in containers rather than GitHub-hosted VMs.
+Docker socket access, nested Docker bind mounts and KVM access require additional
+configuration, so a successful act run is not a substitute for the hosted CI
+run. Do not assume that act can run the complete integration matrix unchanged.
 
 ### Test coverage
 

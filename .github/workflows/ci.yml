@@ -85,3 +85,19 @@ jobs:
         env:
           PLATFORM: ${{ matrix.platform }}
         run: sh tests/integration/run-platforms.sh "$PLATFORM"
+
+  freebsd-integration:
+    name: FreeBSD integration (14.4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ansible_collections/koichirok/postconf
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          path: ansible_collections/koichirok/postconf
+
+      - name: Run integration targets in FreeBSD VM
+        run: sh tests/integration/run-freebsd.sh
