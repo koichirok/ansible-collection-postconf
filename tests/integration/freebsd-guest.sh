@@ -3,7 +3,7 @@ set -eu
 
 export ASSUME_ALWAYS_YES=yes
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-pkg install --yes python312 py312-pip py312-cryptography py312-sqlite3 git
+pkg install --yes expat python312 py312-pip py312-cryptography py312-sqlite3 git
 python3.12 -m venv --system-site-packages /venv
 /venv/bin/pip install ansible-core==2.21.5
 mkdir -p /work/ansible_collections/koichirok/postconf
