@@ -23,13 +23,21 @@ collection's minimum but not the managed-host requirements of newer ansible-core
 releases. Install a suitable Python and set `ansible_python_interpreter` when
 necessary; do not select an obsolete ansible-core solely to retain an old Python.
 
-Install the collection:
+To install from a source checkout before publishing to Ansible Galaxy, run from
+the collection directory:
+
+```sh
+ansible-galaxy collection build
+ansible-galaxy collection install ./koichirok-postconf-1.0.0.tar.gz
+```
+
+Once the collection is published to Ansible Galaxy, install it with:
 
 ```sh
 ansible-galaxy collection install koichirok.postconf
 ```
 
-Or declare it in a collection requirements file:
+Or, after publication, declare it in a collection requirements file:
 
 ```yaml
 collections:
@@ -89,20 +97,23 @@ List inputs also have a deliberately limited equivalence comparison:
   An empty list still joins to an empty string.
 
 When a list is equivalent within this scope, the existing representation is
-retained: `changed=false`, identical diff before/after, no `postconf -e`, no
-configuration rewrite and no backup creation or overwrite. This also applies
-when the effective value comes from a built-in default reported by `postconf -d`
-rather than an explicit setting in `main.cf`; no explicit override is added.
-Actual element or order changes still use the existing separator-selection and
-update behavior. This is not a general Postfix expression parser or an attempt
-to evaluate variable expansions.
+retained and that parameter is not updated. If no other parameter changes, the
+module reports `changed=false`, produces an identical diff before/after, and
+does not run `postconf -e`, rewrite the configuration, or create or overwrite
+a backup. This also applies when the effective value comes from a built-in
+default reported by `postconf -d` rather than an explicit setting in `main.cf`;
+no explicit override is added. Actual element or order changes still use the
+existing separator-selection and update behavior. This is not a general
+Postfix expression parser or an attempt to evaluate variable expansions.
 
 Unknown parameters fail explicitly. Large updates are split into commands using
 the OS argument budget, including encoded byte lengths, environment variables,
 pointer overhead and a safety margin. Linux's per-argument limit is also checked.
 A single parameter that cannot fit fails before backup or any update, including
 in check mode. The conservative fallback for systems without `os.sysconf` is
-262144 bytes; merely increasing it would not remove per-argument limits.
+262144 bytes; merely increasing it would not remove per-argument limits. If an
+update requires multiple commands and a later command fails, earlier commands
+may already have changed the configuration; updates are not transactional.
 
 ## Development
 

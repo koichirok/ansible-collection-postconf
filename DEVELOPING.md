@@ -1,22 +1,29 @@
 # Development and validation
 
-From this collection directory, with ansible-core and the test requirements
-installed:
+Place the checkout under `ansible_collections/koichirok/postconf` and run the
+following from the collection directory with ansible-core installed:
 
 ```sh
 ansible-test units --python 3.13 --requirements
 ansible-test sanity --python 3.13 --requirements
 ```
 
-For direct pytest in this checkout (whose collection namespace is under `/`):
+For direct pytest, install the unit test requirements in an environment with
+ansible-core, then run from the collection directory:
 
 ```sh
-PYTHONPATH=/ python3 -m pytest --cache-clear --import-mode=importlib
+PYTHONPATH="$(cd ../../.. && pwd)" python3 -m pytest --cache-clear --import-mode=importlib tests/unit
 ```
 
 Adjust the Python executable to the environment containing ansible-core and
-pytest. The import mode avoids name collisions between the module and
-module-utils test files.
+pytest. `PYTHONPATH` points to the parent of `ansible_collections`; the import
+mode avoids name collisions between the module and module-utils test files.
+
+GitHub Actions runs unit tests, sanity checks, a collection build, and the
+Linux integration matrix on pull requests targeting `main`, pushes to `main`,
+and manual dispatch. The workflow checks out the collection at the required
+namespace path. Each Linux platform runs in a separate job; FreeBSD is not
+included in CI.
 
 ## Integration tests
 
@@ -105,7 +112,7 @@ host.
 - `postconf`: real command readback, string/integer/empty values, scalar
   conversions, list separators, preservation of unspecified parameters,
   check/diff modes, idempotency, disabled/custom/timestamped backups, and
-  explicit errors without partial configuration writes.
+  explicit pre-update errors without configuration writes.
 - `postconf_no_unnecessary_changes`: submitting effective defaults or
   semantically equivalent list values must not report a change or a diff,
   rewrite `main.cf`, change its modification time/inode/mode, or create a
@@ -140,10 +147,10 @@ required adding spaces to an unchanged list now require preserving the
 original value and updating only the genuinely changed parameter.
 On 2026-11-17, `ansible-test sanity --python 3.13` passes with Ansible 2.22.0.
 The `validate-modules` GPLv3-header finding is explicitly ignored for Ansible
-2.21 and 2.22 because the module is MIT-licensed. The environment lacks
-`shellcheck`, so that optional check is not exercised.
+2.21 and 2.22 because the module is MIT-licensed. `shellcheck` was unavailable
+in that environment, so that optional check was not exercised.
 
-### Current integration results
+### Recorded integration results
 
 Re-tested on 2026-10-23 with ansible-core 2.21.5, Linux targets in disposable
 containers and FreeBSD in a disposable QEMU/KVM VM. Both runner commands
