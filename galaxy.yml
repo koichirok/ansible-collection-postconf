@@ -13,15 +13,25 @@ tags:
   - mail
   - configuration
   - system
-repository: https://github.com/koichirok/ansible-module-postconf
-documentation: https://github.com/koichirok/ansible-module-postconf
-homepage: https://github.com/koichirok/ansible-module-postconf
-issues: https://github.com/koichirok/ansible-module-postconf/issues
+repository: https://github.com/koichirok/ansible-collection-postconf
+documentation: https://github.com/koichirok/ansible-collection-postconf
+homepage: https://github.com/koichirok/ansible-collection-postconf
+issues: https://github.com/koichirok/ansible-collection-postconf/issues
 build_ignore:
   - "*.pyc"
   - "*.pyo"
   - "__pycache__"
   - ".git*"
   - ".pytest_cache"
+  - ".ansible"
+  - ".devcontainer"
+  - ".vscode"
+  - ".venv"
+  - "venv"
+  - "env"
+  - ".env"
+  - ".env.*"
+  - "tests/output"
+  - "tests/integration/inventory"
   - "tests/fixtures/*"
 dependencies: {}
