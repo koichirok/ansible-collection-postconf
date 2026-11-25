@@ -10,7 +10,15 @@
     state: present
   environment:
     DEBIAN_FRONTEND: noninteractive
-  when: ansible_facts.system != 'FreeBSD'
+  when:
+    - ansible_facts.system != 'FreeBSD'
+    - ansible_facts.pkg_mgr != 'apk'
+
+- name: Install Postfix in the disposable Alpine host
+  ansible.builtin.command:
+    argv: [apk, add, --no-cache, postfix]
+    creates: /usr/sbin/postconf
+  when: ansible_facts.pkg_mgr == 'apk'
 
 - name: Install Postfix in the disposable FreeBSD VM
   ansible.builtin.command:
