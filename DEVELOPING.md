@@ -25,6 +25,15 @@ to `main`, and manual dispatch. The workflow checks out the collection at the
 required namespace path. Each Linux platform and the FreeBSD VM run in separate
 jobs.
 
+## Publishing
+
+To publish a release, set `version` in `galaxy.yml`, push a matching `vX.Y.Z`
+tag, and publish a GitHub Release for that tag. Configure the repository's
+`GALAXY_API_KEY` Actions secret with an Ansible Galaxy API key. The release
+workflow checks that the tag matches the collection version, runs unit and
+sanity tests, builds the collection, and publishes it to Galaxy. A release
+with a mismatched tag or failing checks is not published.
+
 ## Integration tests
 
 The integration targets install Postfix and use temporary configuration

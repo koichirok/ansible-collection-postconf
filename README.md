@@ -23,15 +23,7 @@ collection's minimum but not the managed-host requirements of newer ansible-core
 releases. Install a suitable Python and set `ansible_python_interpreter` when
 necessary; do not select an obsolete ansible-core solely to retain an old Python.
 
-To install from a source checkout before publishing to Ansible Galaxy, run from
-the collection directory:
-
-```sh
-ansible-galaxy collection build
-ansible-galaxy collection install ./koichirok-postconf-1.0.0.tar.gz
-```
-
-Once the collection is published to Ansible Galaxy, install it with:
+Install the collection from Ansible Galaxy with:
 
 ```sh
 ansible-galaxy collection install koichirok.postconf
